@@ -1,0 +1,222 @@
+// Recent Highs test
+
+function GetHighs ( input )
+{
+	if (input[0] > input[1])
+		result[0] = True;
+	else
+		result[0] = False;
+		
+	for ( i = 1; i < BarCount - 2; i++ )
+	{
+		if (input[i] >= input[i-1] && input[i] > input[i+1])
+			result[i] = True;
+		else
+			result[i] = False;
+	}
+	
+	if (input[BarCount - 1] > input[BarCount - 2])
+		result[BarCount - 1] = True;
+	else
+		result[BarCount - 1] = False;
+		
+	return result;
+}
+
+// Return if each close price is a recent low.
+function GetLows(input)
+{
+	if (input[0] < input[1])
+		result[0] = True;
+	else
+		result[0] = False;
+		
+	for (i = 1; i < BarCount - 2; i++)
+	{
+		if (input[i] <= input[i-1] && input[i] < input[i+1])
+			result[i] = True;
+		else
+			result[i] = False;
+	}
+	
+	if (input[BarCount - 1] < input[BarCount - 2])
+		result[BarCount - 1] = True;
+	else
+		result[BarCount - 1] = False;
+		
+	return result;
+}
+
+/*
+function GetNewArrayOfHighs (array, numVals, newVal)
+{
+	for (i = 0; i < numVals; i++)
+	{
+		result[i] = array[i + 1];
+	}
+	result[numVals - 1] = newVal;
+	
+	return result;
+}
+
+function MaxOfArray (array)
+{
+	maxVal = array[0];
+	for (i = 1; i < BarCount - 1; i++)
+	{
+		if (array[i] > maxVal)
+			maxVal = array[i];
+	}
+	return maxVal;
+}
+
+function GetRecentHighs ( input, numHighs )
+{
+	highs = GetHighs ( input );
+	
+	for (i = 0; i < numHighs; i++)
+	{
+		array[i] = 0;
+		result[i] = 0;
+	}
+	
+	for (i = numHighs - 1; i < BarCount; i++)
+	{
+		if (highs[i] == True)
+		{
+			recentHighestXMax = MaxOfArray ( GetNewArrayOfHighs (array, numHighs, input[i]));
+			//result[i] = recentHighestXMax;
+			result[i] = 1.3 * recentHighestXMax;
+			//result[i] = 1.5 * Close[i];
+		}
+		else
+			//result[i] = result[i-1];
+			result[i] = 1.1 * Close[i];
+	}
+	
+	return result;
+}
+*/
+
+function GetRecentHighs (input, numHighs)
+{
+	_TRACE("GetRecentHighs");
+	// Get an array showing us if each day is a high or not
+	highs = GetHighs(input);
+	
+	// For every bar, go backwards for 5 highs and get the max value
+	for (i = 0; i < BarCount; i++)
+	{
+		localMax = 0;
+		barNum = i;
+		foundCount = 0;
+		while (barNum >= 0 AND foundCount < numHighs)
+		{
+			if(highs[barNum] == True)
+			{
+				foundCount += 1;
+				if (input[barNum] > localMax)
+					localMax = input[barNum];
+			}
+			barNum -= 1;
+		}
+		result[i] = localMax;
+	}
+	
+	return result;
+}
+
+function GetRecentLows (input, numLows)
+{
+	// Get an array showing us if each day is a low or not
+	lows = GetLows(input);
+	
+	// For every bar, go backwards for x lows and get the min value
+	for (i = 0; i < BarCount; i++)
+	{
+		localMin = input[i];
+		barNum = i;
+		foundCount = 0;
+		while (barNum >= 0 && foundCount < numLows)
+		{
+			if(lows[barNum] == True)
+			{
+				foundCount += 1;
+				if (input[barNum] < localMin)
+					localMin = input[barNum];
+			}
+			barNum -= 1;
+		}
+		result[i] = localMin;
+	}
+	
+	return result;
+}
+
+// Backtest Setup
+SetOption("InitialEquity", 100000);       // Adjust this to match your starting equity
+SetOption("MaxOpenPositions", 1000);       // Use this to limit the maximum number of trades you are willing to take
+SetOption("AccountMargin",100);            // Adjust the level of leverage here. 100 = No Leverage, 50 = Up to $2 exposure for every $1 of equity
+SetOption("usecustombacktestproc", False);
+SetOption("CommissionMode",1);             // Set the commission mode according to how your broker charges you commissions on each trade
+                                           // Mode 1 - percent of trade 
+                                           // Mode 2 - $ per trade 
+                                           // Mode 3 - $ per share/contract
+SetOption("CommissionAmount", 0.5);        // Set commission amount here to match the commission mode you select above
+SetBacktestMode(backtestRegular);
+SetTradeDelays(1,1,1,1);                   // Trades are delayed by 1 bar. Signals executed on the next bar after the signal
+BuyPrice = Open;                           // Buy stocks at the open of the bar following the signal
+SellPrice = Open;                          // Sell stocks at the open of the bar following the signal
+Short=Cover=0;
+
+// Parameter Values - Remove the default values and the // to "OPTIMIZE" to optimize each parameter one at a time if required
+InitialStopMultiple 	= 6;	//Optimize("ATR Multiple for Initial Stop",6,2,10,1); 						// Default Value 6
+PercentRiskPerTrade 	= 0.75;	//Optimize("Percent of Account Risked Per Trade",0.75,0.2,2.0,0.1); 		// Default Value 0.5
+NumRecentHighs			= 5;	//Optimize("Number of recent highs", 5, 1, 10, 1);							// Default Value 5
+NumRecentLows			= 5;	//Optimize("Number of recent lows", 5, 1, 10, 1);							// Default Value 5
+
+// Buy when price is above 5 recent highs; Sell when price is below 5 recent lows
+BuyRule1 = C == GetRecentHighs(Close, NumRecentHighs);
+//BuyRule1 = Cross(C, MA(C, 50));
+
+SellRule1 = C == GetRecentLows(Close, NumRecentLows);
+//SellRule1 = Cross(MA(C, 50), C);
+
+Buy = BuyRule1;
+Sell = SellRule1;
+//Buy = Cross(Close, GetRecentHighs(Close, NumRecentHighs));		
+//Sell = Cross(GetRecentLows(Close, NumRecentLows), Close);
+
+// Position Sizing & Risk Management
+RiskPerShare 	= InitialStopMultiple * Ref(ATR(14),-1);
+ApplyStop(stopTypeLoss, stopModePoint,  RiskPerShare, 2, False );
+
+//The position size model is % risk per trade
+PositionRisk 	= PercentRiskPerTrade;
+PctSize 		= PositionRisk * BuyPrice / RiskPerShare;
+SetPositionSize( PctSize, spsPercentOfEquity );
+
+/////////////////////////////////////////////////////////////////////////////////////////
+// Plot System Indicators & Signals on the chart - PRESS "APPLY" TO PLOT ON YOUR CHART //
+/////////////////////////////////////////////////////////////////////////////////////////
+
+SetChartOptions(1,chartShowDates);
+PlotOHLC( open, high, low, close, Name(), colorBlack, style = styleCandle,Null,null, XShift =0, ZOrder = 0, width = 1 );
+Plot ( GetRecentHighs(Close, 5), "5 Recent Highs", colorGreen);
+Plot ( GetRecentLows (Close, 5), "5 Recent Lows", colorRed);
+PlotShapes(IIf(GetHighs(Close),shapeUpArrow,shapeNone),colorWhite,layer = 0, yposition = graph0, offset = 20, XShift = 0 );
+PlotShapes(IIf(GetLows(Close), shapeDownArrow, shapeNone), colorWhite, layer = 0, yposition = low, offset =  20, XShift = 0);
+PlotShapes(IIf(Buy, shapeUpTriangle, shapeNone), colorGreen, layer = 0, yposition = graph0, offset = 20, XShift = 0);
+PlotShapes(IIf(Sell, shapeDownTriangle, shapeNone), colorRed, layer = 0, yposition = Graph0, offset = 20, XShift = 0);
+
+///////////////////////////////////////////////////////////////////////////////////////////
+// EXPLORATION CODE TO FIND NEW BUY SIGNALS - USE "EXPLORE" FUNCTION ON YESTERDAY'S DATE //
+///////////////////////////////////////////////////////////////////////////////////////////
+
+if (Status("Action") == actionExplore)
+{
+    AddColumn( Buy, "Buy", 1 );
+    AddColumn( Close, "Close", format = 1.3 );
+	
+	Filter = IIf(Buy,1,0);
+}
