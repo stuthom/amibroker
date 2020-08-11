@@ -1,0 +1,146 @@
+
+
+
+// Backtest Setup
+SetOption("InitialEquity", 100000);       // Adjust this to match your starting equity
+SetOption("MaxOpenPositions", 1000);       // Use this to limit the maximum number of trades you are willing to take
+SetOption("AccountMargin",100);            // Adjust the level of leverage here. 100 = No Leverage, 50 = Up to $2 exposure for every $1 of equity
+SetOption("usecustombacktestproc", False);
+SetOption("CommissionMode",1);             // Set the commission mode according to how your broker charges you commissions on each trade
+                                           // Mode 1 - percent of trade 
+                                           // Mode 2 - $ per trade 
+                                           // Mode 3 - $ per share/contract
+SetOption("CommissionAmount", 0.5);        // Set commission amount here to match the commission mode you select above
+SetBacktestMode(backtestRegular);
+SetTradeDelays(1,1,1,1);                   // Trades are delayed by 1 bar. Signals executed on the next bar after the signal
+BuyPrice = Open;                           // Buy stocks at the open of the bar following the signal
+SellPrice = Open;                          // Sell stocks at the open of the bar following the signal
+Short=Cover=0;
+
+// Parameter Values - Remove the default values and the // to "OPTIMIZE" to optimize each parameter one at a time if required
+InitialStopMultiple 	= 6;	//Optimize("ATR Multiple for Initial Stop",6,2,10,1); 						// Default Value 6
+PercentRiskPerTrade 	= 0.75;	//Optimize("Percent of Account Risked Per Trade",0.75,0.2,2.0,0.1); 		// Default Value 0.5
+NumRecentHighs			= 5;	//Optimize("Number of recent highs", 5, 1, 10, 1);							// Default Value 5
+NumRecentLows			= 5;	//Optimize("Number of recent lows", 5, 1, 10, 1);							// Default Value 5
+DebugHighs = False;				//Turn on debug code for highs
+DebugLows = False;				//Turn on debug code for lows
+
+////////////////////////
+// CALCULATIONS
+///////////////////////
+
+// A high is when the price on the day before and after is lower than the price today.
+Highs = Close > Ref(Close, -1) && Close > Ref(Close, 1);
+
+// A low is when the price on the day before and after is higher than the close price today.
+Lows = Close < Ref(Close, -1) && Close < Ref(Close, 1);
+
+HighValues = ValueWhen(Highs, Close, 1);
+// Go through and extend the HighValues based on the number of highs we are after
+for (i = 1; i < NumRecentHighs; i++)
+{
+	if (DebugHighs)
+		_TRACE("Comparing HighValues i = " + NumToStr(i, format=1));
+	HighValues = Max(HighValues, ValueWhen(Highs, Close, i+1));
+}
+
+LowValues = ValueWhen(Lows, Close, 1);
+// Go through and extend the LowValues based on the number of lows we are after
+for (i = 1; i < NumRecentLows; i++)
+{
+	if (DebugLows)
+		_TRACE("Comparing LowValues i = " + NumToStr(i, format=1));
+	LowValues = Min(LowValues, ValueWhen(Lows, Close, i+1));
+}
+
+if (DebugHighs) 
+{
+	// Get the arrays of recent # of highs
+	HighValues1 = ValueWhen(Highs, Close, 1);
+	HighValues2 = Max(ValueWhen(Highs, Close, 1), ValueWhen	(Highs, Close, 2));
+	HighValues3 = Max(ValueWhen(Highs, Close, 1), Max(ValueWhen(Highs, Close, 2), ValueWhen(Highs, Close, 3)));
+	HighValues4 = Max(ValueWhen(Highs, Close, 1), Max(ValueWhen(Highs, Close, 2), Max(ValueWhen(Highs, Close, 3), ValueWhen(Highs, Close, 4))));
+	HighValues5 = Max(ValueWhen(Highs, Close, 1), Max(ValueWhen(Highs, Close, 2), Max(ValueWhen(Highs, Close, 3), Max(ValueWhen(Highs, Close, 4), ValueWhen(Highs, Close, 5)))));
+}
+if (DebugLows)
+{
+	// Get the arrays of recent # of lows
+	LowValues1 = ValueWhen(Lows, Close, 1);
+	LowValues2 = Min(ValueWhen(Lows, Close, 1), ValueWhen (Lows, Close, 2));
+	LowValues3 = Min(ValueWhen(Lows, Close, 1), Min(ValueWhen (Lows, Close, 2), ValueWhen(Lows, Close, 3)));
+	LowValues4 = Min(ValueWhen(Lows, Close, 1), Min(ValueWhen (Lows, Close, 2), Min(ValueWhen(Lows, Close, 3), ValueWhen(Lows, Close, 4))));
+	LowValues5 = Min(ValueWhen(Lows, Close, 1), Min(ValueWhen (Lows, Close, 2), Min(ValueWhen(Lows, Close, 3), Min(ValueWhen(Lows, Close, 4), ValueWhen(Lows, Close, 5)))));
+}
+
+///////////////
+// Buy rules
+///////////////
+
+// Buy when price is above 5 recent highs; Sell when price is below 5 recent lows
+//BuyRule1 = C == GetRecentHighs(Close, NumRecentHighs);
+//BuyRule1 = Cross(C, MA(C, 50));
+BuyRule1 = C >= HighValues;
+
+//SellRule1 = C == GetRecentLows(Close, NumRecentLows);
+//SellRule1 = Cross(MA(C, 50), C);
+SellRule1 = C <= LowValues;
+
+Buy = BuyRule1;
+Sell = SellRule1;
+//Buy = Cross(Close, GetRecentHighs(Close, NumRecentHighs));		
+//Sell = Cross(GetRecentLows(Close, NumRecentLows), Close);
+
+// Position Sizing & Risk Management
+RiskPerShare 	= InitialStopMultiple * Ref(ATR(14),-1);
+ApplyStop(stopTypeLoss, stopModePoint,  RiskPerShare, 2, False );
+
+//The position size model is % risk per trade
+PositionRisk 	= PercentRiskPerTrade;
+PctSize 		= PositionRisk * BuyPrice / RiskPerShare;
+SetPositionSize( PctSize, spsPercentOfEquity );
+
+/////////////////////////////////////////////////////////////////////////////////////////
+// Plot System Indicators & Signals on the chart - PRESS "APPLY" TO PLOT ON YOUR CHART //
+/////////////////////////////////////////////////////////////////////////////////////////
+
+SetChartOptions(1,chartShowDates);
+PlotOHLC( open, high, low, close, Name(), colorBlack, style = styleCandle,Null,null, XShift =0, ZOrder = 0, width = 1 );
+Plot ( HighValues, NumToStr(NumRecentHighs, format=1) + " Recent Highs",  colorGreen);
+Plot ( LowValues, NumToStr(NumRecentLows, format=1) + " Recent Lows", colorRed);
+Plot ( Highs, "Highs", style=styleNoLine);
+Plot ( Lows, "Lows", style=styleNoLine);
+
+if (DebugHighs) 
+{
+	Plot (HighValues1, "HighValues1", colorYellow);
+	Plot (HighValues2, "HighValues2", colorOrange);
+	Plot (HighValues3, "HighValues3", colorRed);
+	Plot (HighValues4, "HighValues4", colorBlue);
+	Plot (HighValues5, "HighValues5", colorGold);
+}
+if (DebugLows) 
+{
+	Plot (LowValues1, "HighValues1", colorYellow);
+	Plot (LowValues2, "HighValues2", colorOrange);
+	Plot (LowValues3, "HighValues3", colorRed);
+	Plot (LowValues4, "HighValues4", colorBlue);
+	Plot (LowValues5, "HighValues5", colorGold);
+}
+
+//Plot ( GetRecentLows (Close, 5), "5 Recent Lows", colorRed);
+PlotShapes(IIf(Highs,shapeUpArrow,shapeNone),colorWhite,layer = 0, yposition = graph0, offset = 20, XShift = 0 );
+PlotShapes(IIf(Lows, shapeDownArrow, shapeNone), colorWhite, layer = 0, yposition = low, offset =  20, XShift = 0);
+PlotShapes(IIf(Buy, shapeUpTriangle, shapeNone), colorGreen, layer = 0, yposition = graph0, offset = 20, XShift = 0);
+PlotShapes(IIf(Sell, shapeDownTriangle, shapeNone), colorRed, layer = 0, yposition = Graph0, offset = 20, XShift = 0);
+
+///////////////////////////////////////////////////////////////////////////////////////////
+// EXPLORATION CODE TO FIND NEW BUY SIGNALS - USE "EXPLORE" FUNCTION ON YESTERDAY'S DATE //
+///////////////////////////////////////////////////////////////////////////////////////////
+
+if (Status("Action") == actionExplore)
+{
+    AddColumn( Buy, "Buy", 1 );
+    AddColumn( Close, "Close", format = 1.3 );
+	
+	Filter = IIf(Buy,1,0);
+}
